@@ -1,0 +1,14 @@
+# raw data and archives, never commit these
+Data/
+data/
+*.csv
+*.zip
+
+# database files and backups
+*.bak
+*.mdf
+*.ldf
+
+# python
+__pycache__/
+.venv/
