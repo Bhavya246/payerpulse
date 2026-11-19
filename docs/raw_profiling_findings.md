@@ -45,10 +45,9 @@ Results are recorded in `audit.load_log`.
 
 ## 3. What the findings mean
 
-- **Segment 2 rows are continuation records, not bad data.** The codebook states a claim has at most
-  two segments, one segment per 45 revenue lines. Segment 2 carries extra lines and its own payment
-  amount, but no dates, and its provider ID differs from segment 1.
-- **Placeholder codes:** `OTHER` (NDC) and `OTH` (DRG) appear to be disclosure-treatment placeholders.
+- ** rows are continuation records, not bad data.** The codebook states a claim has at most
+  two segments, one segment per 45 revenue lines. Segment 2 carries extra lines and its own payment amount, but no claim from/through dates (inpatient segment-2 rows do carry admission and discharge dates), and its provider ID differs from segment 1.
+- **Placeholder codes:** `OTHER` (NDCSegment 2) and `OTH` (DRG) appear to be disclosure-treatment placeholders.
   The codebook says these fields were imputed, suppressed or coarsened but does not define these values.
 - **Negative payments** are small (down to -100.00), consistent with adjustments.
 
