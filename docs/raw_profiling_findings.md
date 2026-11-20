@@ -52,6 +52,7 @@ Results are recorded in `audit.load_log`.
 - **Negative payments** are small (down to -100.00), consistent with adjustments.
 - Segment-1 consistency (inpatient, 66,705 claims): discharge date = claim through-date in 100%; admission date = claim from-date in 99.9% (53 exceptions); calendar length of stay = utilization days in 94.6% (3,596 exceptions). Segment-1 dates are internally consistent and are used for all admission, LOS and readmission logic.
 - Carrier service lines: all 13 line slots carry an amount on every one of the 4,741,335 claims (61,637,355 = 13 × 4,741,335), so empty slots hold zeros. A line is therefore identified by provider NPI or HCPCS code, never by amounts. Dollar totals are reconciled across all 13 slots against staging.
+- Carrier service-line detection: line amount columns hold values in all 13 slots on every claim, so lines cannot be detected from amounts. Slot-level profiling showed the line processing code is populated only where a line exists (slot 13: 14,063 processing codes vs 4,741,335 claims), whereas NPI/HCPCS alone missed lines (90 first lines have neither). A slot is a line if it has an NPI, an HCPCS or a processing code. The load is only marked SUCCESS if the payment total across all 13 raw slots equals the staged total.
 
 ## 4. Rules adopted for staging
 

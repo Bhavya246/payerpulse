@@ -23,13 +23,13 @@ CREATE TABLE stg.carrier_line (
     line_icd9_dgns_cd VARCHAR(10) NULL
 );
 GO
-DECLARE @load_id INT, @raw_rows BIGINT, @loaded BIGINT;
+DECLARE @load_id INT, @raw_rows BIGINT, @loaded BIGINT, @raw_pmt DECIMAL(18,2), @stg_pmt DECIMAL(18,2);
 SELECT @raw_rows = COUNT_BIG(*) FROM raw.carrier_claims;
 INSERT INTO audit.load_log (pipeline_step, source_file, rows_read)
 VALUES ('stg_load', 'raw.carrier_claims -> stg.carrier_line (unpivot)', @raw_rows);
 SET @load_id = SCOPE_IDENTITY();
 
--- A slot is a real line only if prf_physn_npi or hcpcs_cd is present.
+-- A slot is a real line only if prf_physn_npi or hcpcs_cd or line_prcsg_ind_cd is present.
 INSERT INTO stg.carrier_line WITH (TABLOCK) (clm_id, line_number, prf_physn_npi, tax_num, hcpcs_cd, line_nch_pmt_amt, line_bene_ptb_ddctbl_amt, line_bene_prmry_pyr_pd_amt, line_coinsrnc_amt, line_alowd_chrg_amt, line_prcsg_ind_cd, line_icd9_dgns_cd)
 SELECT c.clm_id, v.n,
        v.c1,
@@ -59,22 +59,29 @@ CROSS APPLY (VALUES
         (13, c.prf_physn_npi_13, c.tax_num_13, c.hcpcs_cd_13, c.line_nch_pmt_amt_13, c.line_bene_ptb_ddctbl_amt_13, c.line_bene_prmry_pyr_pd_amt_13, c.line_coinsrnc_amt_13, c.line_alowd_chrg_amt_13, c.line_prcsg_ind_cd_13, c.line_icd9_dgns_cd_13)
 ) AS v(n, c1, c2, c3, c4, c5, c6, c7, c8, c9, c10)
 WHERE v.c1 IS NOT NULL
-   OR v.c3 IS NOT NULL;
+   OR v.c3 IS NOT NULL
+   OR v.c9 IS NOT NULL;
 SET @loaded = @@ROWCOUNT;
 
 ALTER TABLE stg.carrier_line ADD CONSTRAINT PK_stg_carrier_line PRIMARY KEY CLUSTERED (clm_id, line_number);
 
+-- Payment total across all 13 raw slots must equal the staged total, otherwise the load is marked FAILED.
+SELECT @raw_pmt = ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_1)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_2)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_3)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_4)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_5)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_6)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_7)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_8)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_9)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_10)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_11)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_12)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_13)), 0) FROM raw.carrier_claims;
+SELECT @stg_pmt = SUM(line_nch_pmt_amt) FROM stg.carrier_line;
+
 -- rows_read = carrier CLAIMS read; rows_loaded = service LINES produced.
 UPDATE audit.load_log
 SET finished_at = SYSUTCDATETIME(), rows_loaded = @loaded,
-    status = CASE WHEN @loaded > 0 THEN 'SUCCESS' ELSE 'FAILED' END
+    status = CASE WHEN @loaded > 0 AND @raw_pmt = @stg_pmt THEN 'SUCCESS' ELSE 'FAILED' END,
+    error_message = CASE WHEN @raw_pmt = @stg_pmt THEN NULL
+        ELSE N'Payment total mismatch: raw ' + CAST(@raw_pmt AS NVARCHAR(30)) + N' vs staging ' + CAST(@stg_pmt AS NVARCHAR(30)) END
 WHERE load_id = @load_id;
 GO
 
 -- Reconciliation. Counts: line slots with a real key in raw vs rows in staging.
 -- Dollars: the sum over all 13 slots in raw must equal the staging total (no money dropped with empty slots).
 SELECT 'real line slots' AS check_name,
-       (SELECT SUM(CASE WHEN prf_physn_npi_1 IS NOT NULL OR hcpcs_cd_1 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_2 IS NOT NULL OR hcpcs_cd_2 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_3 IS NOT NULL OR hcpcs_cd_3 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_4 IS NOT NULL OR hcpcs_cd_4 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_5 IS NOT NULL OR hcpcs_cd_5 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_6 IS NOT NULL OR hcpcs_cd_6 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_7 IS NOT NULL OR hcpcs_cd_7 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_8 IS NOT NULL OR hcpcs_cd_8 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_9 IS NOT NULL OR hcpcs_cd_9 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_10 IS NOT NULL OR hcpcs_cd_10 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_11 IS NOT NULL OR hcpcs_cd_11 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_12 IS NOT NULL OR hcpcs_cd_12 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_13 IS NOT NULL OR hcpcs_cd_13 IS NOT NULL THEN 1 ELSE 0 END) FROM raw.carrier_claims) AS raw_value,
+       (SELECT SUM(CASE WHEN prf_physn_npi_1 IS NOT NULL OR hcpcs_cd_1 IS NOT NULL OR line_prcsg_ind_cd_1 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_2 IS NOT NULL OR hcpcs_cd_2 IS NOT NULL OR line_prcsg_ind_cd_2 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_3 IS NOT NULL OR hcpcs_cd_3 IS NOT NULL OR line_prcsg_ind_cd_3 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_4 IS NOT NULL OR hcpcs_cd_4 IS NOT NULL OR line_prcsg_ind_cd_4 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_5 IS NOT NULL OR hcpcs_cd_5 IS NOT NULL OR line_prcsg_ind_cd_5 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_6 IS NOT NULL OR hcpcs_cd_6 IS NOT NULL OR line_prcsg_ind_cd_6 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_7 IS NOT NULL OR hcpcs_cd_7 IS NOT NULL OR line_prcsg_ind_cd_7 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_8 IS NOT NULL OR hcpcs_cd_8 IS NOT NULL OR line_prcsg_ind_cd_8 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_9 IS NOT NULL OR hcpcs_cd_9 IS NOT NULL OR line_prcsg_ind_cd_9 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_10 IS NOT NULL OR hcpcs_cd_10 IS NOT NULL OR line_prcsg_ind_cd_10 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_11 IS NOT NULL OR hcpcs_cd_11 IS NOT NULL OR line_prcsg_ind_cd_11 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_12 IS NOT NULL OR hcpcs_cd_12 IS NOT NULL OR line_prcsg_ind_cd_12 IS NOT NULL THEN 1 ELSE 0 END) + SUM(CASE WHEN prf_physn_npi_13 IS NOT NULL OR hcpcs_cd_13 IS NOT NULL OR line_prcsg_ind_cd_13 IS NOT NULL THEN 1 ELSE 0 END) FROM raw.carrier_claims) AS raw_value,
        (SELECT COUNT_BIG(*) FROM stg.carrier_line) AS stg_value
 UNION ALL SELECT 'line_nch_pmt_amt total',
        (SELECT ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_1)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_2)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_3)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_4)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_5)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_6)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_7)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_8)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_9)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_10)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_11)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_12)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_nch_pmt_amt_13)), 0) FROM raw.carrier_claims),
@@ -82,3 +89,13 @@ UNION ALL SELECT 'line_nch_pmt_amt total',
 UNION ALL SELECT 'line_alowd_chrg_amt total',
        (SELECT ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_1)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_2)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_3)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_4)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_5)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_6)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_7)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_8)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_9)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_10)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_11)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_12)), 0) + ISNULL(SUM(TRY_CONVERT(decimal(18,2), line_alowd_chrg_amt_13)), 0) FROM raw.carrier_claims),
        (SELECT SUM(line_alowd_chrg_amt) FROM stg.carrier_line);
+
+
+       SELECT COUNT(DISTINCT clm_id) AS claims_with_lines, COUNT_BIG(*) AS total_lines FROM stg.carrier_line;
+SELECT TOP 2 * FROM audit.load_log ORDER BY load_id DESC;
+
+-- Lines kept even though they have no NPI and no procedure code (a data quality finding)
+SELECT COUNT_BIG(*) AS unidentified_lines, SUM(line_nch_pmt_amt) AS their_payments
+FROM stg.carrier_line WHERE hcpcs_cd IS NULL AND prf_physn_npi IS NULL;
+
+ALTER DATABASE PayerPulse MODIFY FILE (NAME = PayerPulse_log, MAXSIZE = 4GB);

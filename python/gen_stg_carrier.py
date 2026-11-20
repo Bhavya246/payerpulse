@@ -18,7 +18,8 @@ LINE_FIELDS = [
 ]
 # A slot is a REAL service line only if one of these identifying fields is present.
 # (Amount columns are filled with 0.00 in empty slots, so they cannot be used to detect a line.)
-KEY_FIELDS = ["prf_physn_npi", "hcpcs_cd"]
+# line_prcsg_ind_cd is populated exactly where a line exists (profiling: slot 13 has 14,063 of it vs 14,063 tax numbers).
+KEY_FIELDS = ["prf_physn_npi", "hcpcs_cd", "line_prcsg_ind_cd"]
 
 dx_cols = [f"icd9_dgns_cd_{i}" for i in range(1, 9)]
 
@@ -97,7 +98,7 @@ line_sql = (
 "    " + line_ddl + "\n"
 ");\n"
 "GO\n"
-"DECLARE @load_id INT, @raw_rows BIGINT, @loaded BIGINT;\n"
+"DECLARE @load_id INT, @raw_rows BIGINT, @loaded BIGINT, @raw_pmt DECIMAL(18,2), @stg_pmt DECIMAL(18,2);\n"
 "SELECT @raw_rows = COUNT_BIG(*) FROM raw.carrier_claims;\n"
 "INSERT INTO audit.load_log (pipeline_step, source_file, rows_read)\n"
 "VALUES ('stg_load', 'raw.carrier_claims -> stg.carrier_line (unpivot)', @raw_rows);\n"
@@ -111,10 +112,15 @@ line_sql = (
 "WHERE " + where_any + ";\n"
 "SET @loaded = @@ROWCOUNT;\n\n"
 "ALTER TABLE stg.carrier_line ADD CONSTRAINT PK_stg_carrier_line PRIMARY KEY CLUSTERED (clm_id, line_number);\n\n"
+"-- Payment total across all 13 raw slots must equal the staged total, otherwise the load is marked FAILED.\n"
+"SELECT @raw_pmt = " + raw_money("line_nch_pmt_amt_") + " FROM raw.carrier_claims;\n"
+"SELECT @stg_pmt = SUM(line_nch_pmt_amt) FROM stg.carrier_line;\n\n"
 "-- rows_read = carrier CLAIMS read; rows_loaded = service LINES produced.\n"
 "UPDATE audit.load_log\n"
 "SET finished_at = SYSUTCDATETIME(), rows_loaded = @loaded,\n"
-"    status = CASE WHEN @loaded > 0 THEN 'SUCCESS' ELSE 'FAILED' END\n"
+"    status = CASE WHEN @loaded > 0 AND @raw_pmt = @stg_pmt THEN 'SUCCESS' ELSE 'FAILED' END,\n"
+"    error_message = CASE WHEN @raw_pmt = @stg_pmt THEN NULL\n"
+"        ELSE N'Payment total mismatch: raw ' + CAST(@raw_pmt AS NVARCHAR(30)) + N' vs staging ' + CAST(@stg_pmt AS NVARCHAR(30)) END\n"
 "WHERE load_id = @load_id;\n"
 "GO\n\n"
 "-- Reconciliation. Counts: line slots with a real key in raw vs rows in staging.\n"
