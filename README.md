@@ -4,6 +4,7 @@ End-to-end healthcare claims reporting platform on CMS DE-SynPUF (synthetic Medi
 
 **Status:** in progress.
 - [x] Raw layer: 8 CMS files (11M+ claim rows) loaded into SQL Server and reconciled to published row counts
-- [ ] Staging layer (typed, cleaned) and data quality checks
-- [ ] Star schema warehouse
-- [ ] KPI catalog, Power BI dashboards, paginated reports
+- [x] Staging layer: typed tables, flags, conversion checks, dollar reconciliation, audit log
+- [ ] Star schema warehouse (dimensions, then facts)
+- [ ] Data quality framework, KPI catalog
+- [ ] Power BI dashboards, paginated reports
