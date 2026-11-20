@@ -58,3 +58,33 @@ SELECT COUNT(*) AS rows_, SUM(CAST(ndc_is_other AS int)) AS ndc_other,
 FROM stg.pde_event;
 
 SELECT TOP 1 * FROM audit.load_log ORDER BY load_id DESC;
+
+SELECT TOP 8 s1.clm_id, s1.clm_admsn_dt AS adm1, s1.nch_bene_dschrg_dt AS dis1,
+       s2.clm_admsn_dt AS adm2, s2.nch_bene_dschrg_dt AS dis2,
+       s1.clm_pmt_amt AS pmt1, s2.clm_pmt_amt AS pmt2
+FROM stg.inpatient_claim s1
+JOIN stg.inpatient_claim s2 ON s2.clm_id = s1.clm_id AND s1.segment = 1 AND s2.segment = 2
+WHERE s1.clm_admsn_dt <> s2.clm_admsn_dt OR s1.nch_bene_dschrg_dt <> s2.nch_bene_dschrg_dt;
+
+SELECT COUNT(*) AS seg1_rows,
+       SUM(CASE WHEN DATEDIFF(day, clm_admsn_dt, nch_bene_dschrg_dt) = clm_utlztn_day_cnt THEN 1 ELSE 0 END) AS los_equals_util_days,
+       SUM(CASE WHEN clm_admsn_dt = clm_from_dt THEN 1 ELSE 0 END) AS admit_equals_from,
+       SUM(CASE WHEN nch_bene_dschrg_dt = clm_thru_dt THEN 1 ELSE 0 END) AS discharge_equals_thru
+FROM stg.inpatient_claim WHERE segment = 1;
+
+SELECT DATEDIFF(day, clm_admsn_dt, nch_bene_dschrg_dt) - clm_utlztn_day_cnt AS diff_days, COUNT(*) AS n
+FROM stg.inpatient_claim
+WHERE segment = 1
+  AND DATEDIFF(day, clm_admsn_dt, nch_bene_dschrg_dt) <> clm_utlztn_day_cnt
+GROUP BY DATEDIFF(day, clm_admsn_dt, nch_bene_dschrg_dt) - clm_utlztn_day_cnt
+ORDER BY n DESC;
+
+USE PayerPulse;
+SELECT name, type_desc, CAST(size * 8 / 1024.0 / 1024 AS decimal(10,2)) AS size_gb
+FROM sys.database_files;
+
+SELECT COUNT_BIG(hcpcs_cd_1) + COUNT_BIG(hcpcs_cd_2) + COUNT_BIG(hcpcs_cd_3) + COUNT_BIG(hcpcs_cd_4)
+     + COUNT_BIG(hcpcs_cd_5) + COUNT_BIG(hcpcs_cd_6) + COUNT_BIG(hcpcs_cd_7) + COUNT_BIG(hcpcs_cd_8)
+     + COUNT_BIG(hcpcs_cd_9) + COUNT_BIG(hcpcs_cd_10) + COUNT_BIG(hcpcs_cd_11) + COUNT_BIG(hcpcs_cd_12)
+     + COUNT_BIG(hcpcs_cd_13) AS estimated_lines
+FROM raw.carrier_claims;

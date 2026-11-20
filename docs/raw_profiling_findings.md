@@ -46,10 +46,12 @@ Results are recorded in `audit.load_log`.
 ## 3. What the findings mean
 
 - ** rows are continuation records, not bad data.** The codebook states a claim has at most
-  two segments, one segment per 45 revenue lines. Segment 2 carries extra lines and its own payment amount, but no claim from/through dates (inpatient segment-2 rows do carry admission and discharge dates), and its provider ID differs from segment 1.
+  two segments, one segment per 45 revenue lines. Segment 2 is a payment-only continuation record: in the 68 inpatient claims that have one, it carries no diagnosis or HCPCS codes. Discharge dates match segment 1 (in the sampled pairs), but segment 2’s admission date is 3-5 weeks earlier and differs in 61 of 68 pairs. It is not known which admission date is correct, so segment-2 dates are not used. All claim attributes come from segment 1; only payment amounts are summed across segments.
 - **Placeholder codes:** `OTHER` (NDCSegment 2) and `OTH` (DRG) appear to be disclosure-treatment placeholders.
   The codebook says these fields were imputed, suppressed or coarsened but does not define these values.
 - **Negative payments** are small (down to -100.00), consistent with adjustments.
+- Segment-1 consistency (inpatient, 66,705 claims): discharge date = claim through-date in 100%; admission date = claim from-date in 99.9% (53 exceptions); calendar length of stay = utilization days in 94.6% (3,596 exceptions). Segment-1 dates are internally consistent and are used for all admission, LOS and readmission logic.
+- Carrier service lines: all 13 line slots carry an amount on every one of the 4,741,335 claims (61,637,355 = 13 × 4,741,335), so empty slots hold zeros. A line is therefore identified by provider NPI or HCPCS code, never by amounts. Dollar totals are reconciled across all 13 slots against staging.
 
 ## 4. Rules adopted for staging
 
