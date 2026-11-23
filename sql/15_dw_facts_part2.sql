@@ -179,3 +179,5 @@ GROUP BY OBJECT_NAME(parent_object_id) ORDER BY 1;
 
 -- 5) The audit rows: three SUCCESS lines with real durations
 SELECT TOP 3 * FROM audit.load_log ORDER BY load_id DESC;
+
+SELECT name, value_in_use FROM sys.configurations WHERE name = 'max server memory (MB)';
