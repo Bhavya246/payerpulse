@@ -110,6 +110,12 @@ rule("CON01", "Claims dated after the member's death", "fact_claim", "consistenc
 rule("CON02", "Prescription fills after the member's death", "fact_rx_event", "consistency", "WARN",
      "Part D fills dated after the member's recorded death date.",
      "SELECT @checked = COUNT_BIG(*), @failed = ISNULL(SUM(CASE WHEN b.death_date IS NOT NULL AND r.service_date_key > CONVERT(int, CONVERT(char(8), b.death_date, 112)) THEN 1 ELSE 0 END), 0) FROM dw.fact_rx_event r JOIN dw.dim_beneficiary b ON b.beneficiary_key = r.beneficiary_key WHERE r.service_date_key IS NOT NULL")
+rule("CON03", "Decedents with a full year of coverage in the year of death", "fact_member_year", "consistency", "WARN",
+     "Members who died during a year but still show 12 months of Part A coverage that year.",
+     "SELECT @checked = COUNT_BIG(*), @failed = ISNULL(SUM(CASE WHEN my.part_a_months = 12 THEN 1 ELSE 0 END), 0) FROM dw.fact_member_year my JOIN dw.dim_beneficiary b ON b.beneficiary_key = my.beneficiary_key WHERE b.death_date >= DATEFROMPARTS(my.coverage_year, 1, 1) AND b.death_date <= DATEFROMPARTS(my.coverage_year, 12, 31)")
+rule("CMP07", "Claims in a year with no Part A/B coverage", "fact_claim", "completeness", "WARN",
+     "Claims dated in a year where the member has zero Part A and zero Part B months.",
+     "SELECT @checked = COUNT_BIG(*), @failed = ISNULL(SUM(CASE WHEN my.part_a_months = 0 AND my.part_b_months = 0 THEN 1 ELSE 0 END), 0) FROM dw.fact_claim c JOIN dw.fact_member_year my ON my.beneficiary_key = c.beneficiary_key AND my.coverage_year = c.thru_date_key / 10000 WHERE c.thru_date_key IS NOT NULL")
 
 def q(s):
     return "N'" + s.replace("'", "''") + "'"

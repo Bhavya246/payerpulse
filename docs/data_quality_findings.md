@@ -24,3 +24,12 @@ fills are dated after a member's death, no date inversions, no coverage months a
 transaction; rule VAL02 reported 1 failure, and the change was rolled back.
 
 DE-SynPUF is synthetic: these findings describe the dataset, not real Medicare data.
+
+## Coverage findings (member-years, before KPI definitions)
+
+- 83.5% / 90.8% / 86.3% of member-years (2008 / 2009 / 2010) have a full year of Part A and Part B.
+- Part A and B differ for 7.6% / 3.8% / 8.4%: these members average roughly 10 months of Part A and 2 of Part B
+  (hospital-only coverage), so inpatient rates use Part A months and outpatient/carrier rates use Part B months.
+- HMO months appear for 23.1% / 29.1% / 32.4% of member-years.
+- 4,676 / 5,983 / 5,655 member-years have zero A and B months, yet 1,396 / 222 / 11 of them have claims in that year.
+  Candidate rule: "claims in a year with no Part A/B coverage" (WARN).

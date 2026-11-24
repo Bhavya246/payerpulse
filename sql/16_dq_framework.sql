@@ -104,7 +104,11 @@ INSERT INTO audit.dq_rule (rule_id, rule_name, layer_name, table_name, dq_dimens
 ('CON01', N'Claims dated after the member''s death', 'dw', 'fact_claim', 'consistency', 'WARN', N'Claims whose start date is after the member''s recorded death date.',
     N'SELECT @checked = COUNT_BIG(*), @failed = ISNULL(SUM(CASE WHEN b.death_date IS NOT NULL AND c.from_date_key > CONVERT(int, CONVERT(char(8), b.death_date, 112)) THEN 1 ELSE 0 END), 0) FROM dw.fact_claim c JOIN dw.dim_beneficiary b ON b.beneficiary_key = c.beneficiary_key WHERE c.from_date_key IS NOT NULL'),
 ('CON02', N'Prescription fills after the member''s death', 'dw', 'fact_rx_event', 'consistency', 'WARN', N'Part D fills dated after the member''s recorded death date.',
-    N'SELECT @checked = COUNT_BIG(*), @failed = ISNULL(SUM(CASE WHEN b.death_date IS NOT NULL AND r.service_date_key > CONVERT(int, CONVERT(char(8), b.death_date, 112)) THEN 1 ELSE 0 END), 0) FROM dw.fact_rx_event r JOIN dw.dim_beneficiary b ON b.beneficiary_key = r.beneficiary_key WHERE r.service_date_key IS NOT NULL');
+    N'SELECT @checked = COUNT_BIG(*), @failed = ISNULL(SUM(CASE WHEN b.death_date IS NOT NULL AND r.service_date_key > CONVERT(int, CONVERT(char(8), b.death_date, 112)) THEN 1 ELSE 0 END), 0) FROM dw.fact_rx_event r JOIN dw.dim_beneficiary b ON b.beneficiary_key = r.beneficiary_key WHERE r.service_date_key IS NOT NULL'),
+('CON03', N'Decedents with a full year of coverage in the year of death', 'dw', 'fact_member_year', 'consistency', 'WARN', N'Members who died during a year but still show 12 months of Part A coverage that year.',
+    N'SELECT @checked = COUNT_BIG(*), @failed = ISNULL(SUM(CASE WHEN my.part_a_months = 12 THEN 1 ELSE 0 END), 0) FROM dw.fact_member_year my JOIN dw.dim_beneficiary b ON b.beneficiary_key = my.beneficiary_key WHERE b.death_date >= DATEFROMPARTS(my.coverage_year, 1, 1) AND b.death_date <= DATEFROMPARTS(my.coverage_year, 12, 31)'),
+('CMP07', N'Claims in a year with no Part A/B coverage', 'dw', 'fact_claim', 'completeness', 'WARN', N'Claims dated in a year where the member has zero Part A and zero Part B months.',
+    N'SELECT @checked = COUNT_BIG(*), @failed = ISNULL(SUM(CASE WHEN my.part_a_months = 0 AND my.part_b_months = 0 THEN 1 ELSE 0 END), 0) FROM dw.fact_claim c JOIN dw.fact_member_year my ON my.beneficiary_key = c.beneficiary_key AND my.coverage_year = c.thru_date_key / 10000 WHERE c.thru_date_key IS NOT NULL');
 GO
 
 /* ---------- runner ---------- */
@@ -176,10 +180,3 @@ JOIN audit.dq_rule r  ON r.rule_id = x.rule_id
 JOIN audit.dq_run run ON run.run_id = x.run_id
 WHERE x.run_id = (SELECT MAX(run_id) FROM audit.dq_run WHERE finished_at IS NOT NULL);
 GO
-
-
-USE PayerPulse;
-EXEC audit.usp_run_dq;
-
-SELECT * FROM audit.dq_run ORDER BY run_id DESC;
-SELECT status, COUNT(*) AS rules FROM audit.v_dq_latest GROUP BY status;
